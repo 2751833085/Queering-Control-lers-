@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Console - The T-Rex Game</title>
+  <meta property="og:title" content="Console - The T-Rex Game">
+  <meta name="application-name" content="The T-Rex Game">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>🎮 Console</h1>
+    <p style="color: #888; margin-bottom: 1rem;">Admin: Announce result, reset game</p>
+
+    <div class="card">
+      <div style="margin-bottom: 0.5rem;">Status</div>
+      <div id="game-status" style="font-size: 1.2rem; font-weight: 600;">Loading...</div>
+    </div>
+
+    <div id="bets-card" class="card" style="display:none;">
+      <div style="margin-bottom: 0.5rem;">Current players (<span id="bets-count">0</span>)</div>
+      <ul id="bets-list" style="list-style: none;"></ul>
+    </div>
+
+    <div class="card">
+      <div style="margin-bottom: 0.75rem;">Announce result: Which path did the T-Rex appear from?</div>
+      <div class="choices">
+        <div class="choice choice-1" onclick="triggerResult(1)">Path 1</div>
+        <div class="choice choice-2" onclick="triggerResult(2)">Path 2</div>
+        <div class="choice choice-3" onclick="triggerResult(3)">Path 3</div>
+        <div class="choice choice-4" onclick="triggerResult(4)">Path 4</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 1rem;">
+      <button class="btn btn-danger" onclick="resetGame()">Reset Game</button>
+    </div>
+
+    <div class="nav-links" style="margin-top: 1.5rem;">
+      <a href="index.html">← Back to Game</a>
+      <a href="leaderboard.html">Leaderboard</a>
+    </div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+    var docRef;
+    if (typeof db !== 'undefined') docRef = db.collection('gameState').doc('current');
+
+    function updateUI(data) {
+      var status = document.getElementById('game-status');
+      var card = document.getElementById('bets-card');
+      var count = document.getElementById('bets-count');
+      var list = document.getElementById('bets-list');
+      var bets = data.bets || [];
+      if (data.status === 'betting' && bets.length > 0) {
+        status.textContent = 'Betting - ' + bets.length + ' players';
+        status.style.color = '#4cc9f0';
+        card.style.display = 'block';
+        count.textContent = bets.length;
+        list.innerHTML = bets.map(function(b, i) {
+          return '<li style="padding:0.3rem 0;">' + (i+1) + '. ' + (b.playerName||'?') + ' → Path ' + b.userChoice + '</li>';
+        }).join('');
+      } else if (data.status === 'resolved') {
+        status.textContent = 'Announced - Path ' + data.actualResult;
+        status.style.color = '#2a9d8f';
+        card.style.display = 'block';
+        count.textContent = bets.length;
+        var results = data.results || [];
+        list.innerHTML = results.map(function(r) {
+          return '<li style="padding:0.3rem 0;">' + (r.playerName||'?') + ' → ' + (r.result === 'win' ? '✓ Won' : '✗') + '</li>';
+        }).join('');
+      } else {
+        status.textContent = 'Idle - Waiting for players';
+        status.style.color = '#888';
+        card.style.display = 'none';
+      }
+    }
+
+    function triggerResult(pathNum) {
+      if (!docRef || !db) return;
+      docRef.get().then(function(doc) {
+        var data = doc.exists ? doc.data() : {};
+        var bets = data.bets || [];
+        if (bets.length === 0) { alert('No players yet'); return Promise.reject(); }
+        var results = bets.map(function(b) {
+          return { playerName: b.playerName, userChoice: b.userChoice, result: b.userChoice === pathNum ? 'win' : 'lose' };
+        });
+        return docRef.set({
+          status: 'resolved',
+          actualResult: pathNum,
+          results: results,
+          bets: bets,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(function() {
+          var batch = db.batch();
+          results.forEach(function(r) {
+            var ref = db.collection('bets').doc();
+            batch.set(ref, {
+              playerName: r.playerName,
+              userChoice: r.userChoice,
+              actualResult: pathNum,
+              result: r.result,
+              timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          });
+          return batch.commit();
+        });
+      }).then(function() {
+        alert('Announced! Path ' + pathNum);
+      }).catch(function() { alert('Operation failed. Please try again.'); });
+    }
+
+    function resetGame() {
+      if (!docRef) return;
+      if (!confirm('Reset? This will clear the current round (leaderboard history unchanged).')) return;
+      docRef.set({
+        status: 'idle',
+        bets: [],
+        actualResult: null,
+        results: [],
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(function() { updateUI({ status: 'idle', bets: [] }); alert('Reset complete'); }).catch(function() { alert('Reset failed. Please try again.'); });
+    }
+
+    if (docRef) {
+      docRef.get().then(function(doc) {
+        updateUI(doc.exists ? doc.data() : { status: 'idle' });
+      });
+      docRef.onSnapshot(function(doc) {
+        if (doc.exists) updateUI(doc.data());
+      });
+    } else {
+      document.getElementById('game-status').textContent = 'Firebase not connected';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leaderboard - The T-Rex Game</title>
+  <meta property="og:title" content="Leaderboard - The T-Rex Game">
+  <meta name="application-name" content="The T-Rex Game">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>📊 Leaderboard</h1>
+    <p style="color: #888; margin-bottom: 1rem;">Sorted by wins</p>
+
+    <div id="stats" class="card" style="margin-bottom: 1rem;">
+      <span id="stat-total">Total: 0</span> &nbsp;|&nbsp;
+      <span id="stat-wins">Wins: 0</span>
+    </div>
+
+    <div id="leaderboard-list" class="card">
+      <p id="loading">Loading...</p>
+      <ul id="rank-list" style="list-style: none;"></ul>
+    </div>
+
+    <div class="nav-links" style="margin-top: 1.5rem;">
+      <a href="index.html">← Back to Game</a>
+      <a href="console.html">Console</a>
+    </div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+    function loadLeaderboard() {
+      var list = document.getElementById('rank-list');
+      var loading = document.getElementById('loading');
+      var statTotal = document.getElementById('stat-total');
+      var statWins = document.getElementById('stat-wins');
+      if (!db) { loading.textContent = 'Firebase not connected'; return; }
+      db.collection('bets').get().then(function(snap) {
+        loading.style.display = 'none';
+        var players = {};
+        var total = 0, wins = 0;
+        snap.forEach(function(doc) {
+          var d = doc.data();
+          if (d.result) {
+            total++;
+            if (d.result === 'win') wins++;
+            var name = (d.playerName || 'Anonymous').trim() || 'Anonymous';
+            if (!players[name]) players[name] = { wins: 0, total: 0 };
+            players[name].total++;
+            if (d.result === 'win') players[name].wins++;
+          }
+        });
+        statTotal.textContent = 'Total: ' + total;
+        statWins.textContent = 'Wins: ' + wins;
+        var sorted = Object.entries(players).sort(function(a, b) { return b[1].wins - a[1].wins; });
+        list.innerHTML = '';
+        if (sorted.length === 0) {
+          list.innerHTML = '<li style="color:#888;">No data yet. Go play!</li>';
+          return;
+        }
+        sorted.forEach(function(entry, i) {
+          var name = entry[0];
+          var p = entry[1];
+          var rate = p.total > 0 ? Math.round(p.wins / p.total * 100) : 0;
+          var li = document.createElement('li');
+          li.style.cssText = 'padding: 0.5rem 0; border-bottom: 1px solid #0f3460; display: flex; justify-content: space-between; align-items: center;';
+          li.innerHTML = '<span>#' + (i + 1) + ' ' + name + '</span><span style="color:#4cc9f0;">' + p.wins + ' W / ' + p.total + ' games (' + rate + '%)</span>';
+          list.appendChild(li);
+        });
+      }).catch(function(e) {
+        loading.textContent = 'Load failed: ' + (e.message || e);
+      });
+    }
+    if (typeof db !== 'undefined' && db) loadLeaderboard();
+    else document.addEventListener('DOMContentLoaded', loadLeaderboard);
+  </script>
+</body>
+</html>
